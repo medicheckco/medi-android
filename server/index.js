@@ -11,8 +11,21 @@ import { registerUser, requireAdmin, requireAuth, toClientUser } from './auth.js
 const app = express();
 const port = Number(process.env.API_PORT || 4000);
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const allowedOrigins = (process.env.CORS_ORIGIN || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
-app.use(cors({ origin: process.env.CORS_ORIGIN || true }));
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
+      callback(null, true);
+      return;
+    }
+
+    callback(new Error(`Origin ${origin} is not allowed by CORS.`));
+  },
+}));
 app.use(express.json({ limit: '25mb' }));
 
 app.get('/', (_req, res) => {
