@@ -1,4 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 import { User } from '../types';
 import { apiService } from '../services/api';
 import { auth, googleProvider } from '../lib/firebase';
@@ -21,12 +23,45 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const isNative = Capacitor.isNativePlatform();
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (isNative) {
+      let isMounted = true;
+
+      const restoreNativeUser = async () => {
+        try {
+          const { user: nativeUser } = await FirebaseAuthentication.getCurrentUser();
+          if (!nativeUser) {
+            localStorage.removeItem('meditrack_token');
+            if (isMounted) setUser(null);
+            return;
+          }
+
+          const { token } = await FirebaseAuthentication.getIdToken({ forceRefresh: false });
+          localStorage.setItem('meditrack_token', token);
+          const userData = await apiService.getCurrentUser();
+          if (isMounted) setUser(userData);
+        } catch (err) {
+          console.error('Native auth sync failed:', err);
+          localStorage.removeItem('meditrack_token');
+          if (isMounted) setUser(null);
+        } finally {
+          if (isMounted) setLoading(false);
+        }
+      };
+
+      restoreNativeUser();
+
+      return () => {
+        isMounted = false;
+      };
+    }
+
     let authSettled = false;
     const finishAuth = () => {
       authSettled = true;
@@ -70,10 +105,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const login = async (email: string, password?: string) => {
+    if (isNative) {
+      await FirebaseAuthentication.signInWithEmailAndPassword({
+        email,
+        password: password || 'guest-mode-default',
+      });
+      const { token } = await FirebaseAuthentication.getIdToken({ forceRefresh: true });
+      localStorage.setItem('meditrack_token', token);
+      const userData = await apiService.getCurrentUser();
+      setUser(userData);
+      return;
+    }
+
     await signInWithEmailAndPassword(auth, email, password || 'guest-mode-default');
   };
 
   const register = async (email: string, password?: string, name?: string) => {
+    if (isNative) {
+      await FirebaseAuthentication.createUserWithEmailAndPassword({
+        email,
+        password: password || 'guest-mode-default',
+      });
+      const { token } = await FirebaseAuthentication.getIdToken({ forceRefresh: true });
+      localStorage.setItem('meditrack_token', token);
+      const userData = await apiService.register(email, password, name);
+      setUser(userData.user);
+      return;
+    }
+
     const { user: firebaseUser } = await createUserWithEmailAndPassword(auth, email, password || 'guest-mode-default');
     
     // We can't set the display name directly in AuthContext easily without updating profile
@@ -87,10 +146,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const loginWithGoogle = async () => {
+    if (isNative) {
+      await FirebaseAuthentication.signInWithGoogle();
+      const { token } = await FirebaseAuthentication.getIdToken({ forceRefresh: true });
+      localStorage.setItem('meditrack_token', token);
+      const userData = await apiService.getCurrentUser();
+      setUser(userData);
+      return;
+    }
+
     await signInWithRedirect(auth, googleProvider);
   };
 
   const logout = () => {
+    if (isNative) {
+      FirebaseAuthentication.signOut().finally(() => {
+        localStorage.removeItem('meditrack_token');
+        setUser(null);
+      });
+      return;
+    }
+
     signOut(auth);
   };
 
