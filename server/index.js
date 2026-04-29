@@ -15,6 +15,14 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 app.use(cors({ origin: process.env.CORS_ORIGIN || true }));
 app.use(express.json({ limit: '25mb' }));
 
+app.get('/', (_req, res) => {
+  res.json({
+    name: 'MediTrack API',
+    ok: true,
+    health: '/api/health',
+  });
+});
+
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true });
 });
